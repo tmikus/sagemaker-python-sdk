@@ -51,7 +51,6 @@ from sagemaker.utils import (
     _get_resolved_path,
     _is_bad_path,
     _is_bad_link,
-    custom_extractall_tarfile,
     can_model_package_source_uri_autopopulate,
     get_instance_rate_per_hour,
     extract_instance_rate_per_hour,
@@ -60,6 +59,7 @@ from sagemaker.utils import (
     _validate_new_tags,
     remove_tag_with_key,
 )
+from sagemaker.utilities.tarfile import extract_tar_gz
 from src.sagemaker.config.config_utils import _log_sagemaker_config_single_substitution
 from tests.unit.sagemaker.workflow.helpers import CustomStep
 from sagemaker.workflow.parameters import ParameterString, ParameterInteger
@@ -1093,8 +1093,7 @@ def list_tar_files(tar_ball, tmp):
     startpath = os.path.join(tmp, "startpath")
     os.mkdir(startpath)
 
-    with tarfile.open(name=tar_ball, mode="r:gz") as t:
-        custom_extractall_tarfile(t, startpath)
+    extract_tar_gz(tar_ball, startpath)
 
     def walk():
         for root, dirs, files in os.walk(startpath):
@@ -1892,7 +1891,7 @@ def test_is_bad_link(link_name, base, expected):
 )
 def test_custom_extractall_tarfile(mock_custom_tarfile, data_filter, expected_extract_path):
     tar = mock_custom_tarfile(data_filter)
-    custom_extractall_tarfile(tar, "/extract/path")
+    extract_tar_gz(tar, "/extract/path")
 
 
 def test_can_model_package_source_uri_autopopulate():

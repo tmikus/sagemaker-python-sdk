@@ -22,7 +22,6 @@ import os
 import random
 import re
 import shutil
-import tarfile
 import tempfile
 import time
 from functools import lru_cache
@@ -31,7 +30,6 @@ import json
 import abc
 import uuid
 from datetime import datetime
-from os.path import abspath, realpath, dirname, normpath, join as joinpath
 
 from importlib import import_module
 
@@ -51,6 +49,7 @@ from sagemaker.enums import RoutingStrategy
 from sagemaker.session_settings import SessionSettings
 from sagemaker.workflow import is_pipeline_variable, is_pipeline_parameter_string
 from sagemaker.workflow.entities import PipelineVariable
+from sagemaker.utilities.tarfile import compress_files_to_tar_gz, extract_tar_gz, FileToCompress
 
 ECR_URI_PATTERN = r"^(\d+)(\.)dkr(\.)ecr(\.)(.+)(\.)(.*)(/)(.*:.*)$"
 MODEL_PACKAGE_ARN_PATTERN = (
@@ -454,11 +453,11 @@ def create_tar_file(source_files, target=None):
         filename = target
     else:
         _, filename = tempfile.mkstemp()
-
-    with tarfile.open(filename, mode="w:gz", dereference=True) as t:
-        for sf in source_files:
-            # Add all files from the directory into the root of the directory structure of the tar
-            t.add(sf, arcname=os.path.basename(sf))
+    files_to_compress = [
+        FileToCompress(sf, arcname=os.path.basename(sf))
+        for sf in source_files
+    ]
+    compress_files_to_tar_gz(filename, files_to_compress)
     return filename
 
 
@@ -560,9 +559,7 @@ def repack_model(
         )
 
         tmp_model_path = os.path.join(tmp, "temp-model.tar.gz")
-        with tarfile.open(tmp_model_path, mode="w:gz") as t:
-            t.add(model_dir, arcname=os.path.sep)
-
+        compress_files_to_tar_gz(tmp_model_path, [FileToCompress(model_dir, arcname=os.path.sep)])
         _save_model(repacked_model_uri, tmp_model_path, sagemaker_session, kms_key=kms_key)
 
 
@@ -599,9 +596,7 @@ def _create_or_update_code_dir(
     if source_directory and source_directory.lower().startswith("s3://"):
         local_code_path = os.path.join(tmp, "local_code.tar.gz")
         download_file_from_url(source_directory, local_code_path, sagemaker_session)
-
-        with tarfile.open(name=local_code_path, mode="r:gz") as t:
-            custom_extractall_tarfile(t, code_dir)
+        extract_tar_gz(local_code_path, code_dir)
 
     elif source_directory:
         if os.path.exists(code_dir):
@@ -637,8 +632,7 @@ def _extract_model(model_uri, sagemaker_session, tmp):
         download_file_from_url(model_uri, local_model_path, sagemaker_session)
     else:
         local_model_path = model_uri.replace("file://", "")
-    with tarfile.open(name=local_model_path, mode="r:gz") as t:
-        custom_extractall_tarfile(t, tmp_model_dir)
+    extract_tar_gz(local_model_path, tmp_model_dir)
     return tmp_model_dir
 
 
@@ -1504,98 +1498,6 @@ def format_tags(tags: Tags) -> List[TagsDict]:
         return [{"Key": str(k), "Value": str(v)} for k, v in tags.items()]
 
     return tags
-
-
-def _get_resolved_path(path):
-    """Return the normalized absolute path of a given path.
-
-    abspath - returns the absolute path without resolving symlinks
-    realpath - resolves the symlinks and gets the actual path
-    normpath - normalizes paths (e.g. remove redudant separators)
-    and handles platform-specific differences
-    """
-    return normpath(realpath(abspath(path)))
-
-
-def _is_bad_path(path, base):
-    """Checks if the joined path (base directory + file path) is rooted under the base directory
-
-    Ensuring that the file does not attempt to access paths
-    outside the expected directory structure.
-
-    Args:
-        path (str): The file path.
-        base (str): The base directory.
-
-    Returns:
-        bool: True if the path is not rooted under the base directory, False otherwise.
-    """
-    # joinpath will ignore base if path is absolute
-    return not _get_resolved_path(joinpath(base, path)).startswith(base)
-
-
-def _is_bad_link(info, base):
-    """Checks if the link is rooted under the base directory.
-
-    Ensuring that the link does not attempt to access paths outside the expected directory structure
-
-    Args:
-        info (tarfile.TarInfo): The tar file info.
-        base (str): The base directory.
-
-    Returns:
-        bool: True if the link is not rooted under the base directory, False otherwise.
-    """
-    # Links are interpreted relative to the directory containing the link
-    tip = _get_resolved_path(joinpath(base, dirname(info.name)))
-    return _is_bad_path(info.linkname, base=tip)
-
-
-def _get_safe_members(members):
-    """A generator that yields members that are safe to extract.
-
-    It filters out bad paths and bad links.
-
-    Args:
-        members (list): A list of members to check.
-
-    Yields:
-        tarfile.TarInfo: The tar file info.
-    """
-    base = _get_resolved_path(".")
-
-    for file_info in members:
-        if _is_bad_path(file_info.name, base):
-            logger.error("%s is blocked (illegal path)", file_info.name)
-        elif file_info.issym() and _is_bad_link(file_info, base):
-            logger.error("%s is blocked: Symlink to %s", file_info.name, file_info.linkname)
-        elif file_info.islnk() and _is_bad_link(file_info, base):
-            logger.error("%s is blocked: Hard link to %s", file_info.name, file_info.linkname)
-        else:
-            yield file_info
-
-
-def custom_extractall_tarfile(tar, extract_path):
-    """Extract a tarfile, optionally using data_filter if available.
-
-    # TODO: The function and it's usages can be deprecated once SageMaker Python SDK
-    is upgraded to use Python 3.12+
-
-    If the tarfile has a data_filter attribute, it will be used to extract the contents of the file.
-    Otherwise, the _get_safe_members function will be used to filter bad paths and bad links.
-
-    Args:
-        tar (tarfile.TarFile): The opened tarfile object.
-        extract_path (str): The path to extract the contents of the tarfile.
-
-    Returns:
-        None
-    """
-    if hasattr(tarfile, "data_filter"):
-        tar.extractall(path=extract_path, filter="data")
-    else:
-        tar.extractall(path=extract_path, members=_get_safe_members(tar))
-
 
 def can_model_package_source_uri_autopopulate(source_uri: str):
     """Checks if the source_uri can lead to auto-population of information in the Model registry.

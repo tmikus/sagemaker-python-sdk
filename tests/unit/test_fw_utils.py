@@ -24,7 +24,8 @@ import pytest
 from mock import Mock, patch
 
 from sagemaker import fw_utils
-from sagemaker.utils import name_from_image, custom_extractall_tarfile
+from sagemaker.utils import name_from_image
+from sagemaker.utilities.tarfile import extract_tar_gz
 from sagemaker.session_settings import SessionSettings
 from sagemaker.instance_group import InstanceGroup
 
@@ -423,8 +424,7 @@ def list_source_dir_files(sagemaker_session, tmpdir):
 def list_tar_files(folder, tar_ball, tmpdir):
     startpath = str(tmpdir.ensure(folder, dir=True))
 
-    with tarfile.open(name=tar_ball, mode="r:gz") as t:
-        custom_extractall_tarfile(t, startpath)
+    extract_tar_gz(tar_ball, startpath)
 
     def walk():
         for root, dirs, files in os.walk(startpath):

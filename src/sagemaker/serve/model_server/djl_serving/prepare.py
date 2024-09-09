@@ -19,7 +19,8 @@ import logging
 from typing import List
 from pathlib import Path
 
-from sagemaker.utils import _tmpdir, custom_extractall_tarfile
+from sagemaker.utils import _tmpdir
+from sagemaker.utilities.tarfile import extract_tar_gz
 from sagemaker.s3 import S3Downloader
 from sagemaker.serve.utils.local_hardware import _check_disk_space, _check_docker_disk_usage
 
@@ -31,8 +32,7 @@ logger = logging.getLogger(__name__)
 def _extract_js_resource(js_model_dir: str, code_dir: Path, js_id: str):
     """Uncompress the jumpstart resource"""
     tmp_sourcedir = Path(js_model_dir).joinpath(f"infer-prepack-{js_id}.tar.gz")
-    with tarfile.open(str(tmp_sourcedir)) as resources:
-        custom_extractall_tarfile(resources, code_dir)
+    extract_tar_gz(str(tmp_sourcedir), code_dir)
 
 
 def _copy_jumpstart_artifacts(model_data: str, js_id: str, code_dir: Path) -> tuple:

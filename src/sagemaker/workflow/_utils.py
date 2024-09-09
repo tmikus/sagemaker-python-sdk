@@ -36,8 +36,8 @@ from sagemaker.utils import (
     _save_model,
     download_file_from_url,
     format_tags,
-    custom_extractall_tarfile,
 )
+from sagemaker.utilities.tarfile import extract_tar_gz
 from sagemaker.workflow.retry import RetryPolicy
 from sagemaker.workflow.utilities import trim_request_dict
 
@@ -260,9 +260,7 @@ class _RepackModelStep(TrainingStep):
 
                 old_targz_path = os.path.join(tmp, "old.tar.gz")
                 download_file_from_url(self._source_dir, old_targz_path, self.sagemaker_session)
-
-                with tarfile.open(name=old_targz_path, mode="r:gz") as t:
-                    custom_extractall_tarfile(t, targz_contents_dir)
+                extract_tar_gz(old_targz_path, targz_contents_dir)
 
                 shutil.copy2(fname, os.path.join(targz_contents_dir, REPACK_SCRIPT))
                 with open(

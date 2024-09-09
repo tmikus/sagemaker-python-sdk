@@ -40,7 +40,8 @@ from sagemaker.config.config_schema import CONTAINER_CONFIG, LOCAL
 import sagemaker.local.data
 import sagemaker.local.utils
 import sagemaker.utils
-from sagemaker.utils import custom_extractall_tarfile
+from sagemaker.utilities.tarfile import extract_tar_gz
+
 
 CONTAINER_PREFIX = "algo"
 STUDIO_HOST_NAME = "sagemaker-local"
@@ -686,8 +687,7 @@ class _SageMakerContainer(object):
 
         for filename in model_data_source.get_file_list():
             if tarfile.is_tarfile(filename):
-                with tarfile.open(filename) as tar:
-                    custom_extractall_tarfile(tar, model_data_source.get_root_dir())
+                extract_tar_gz(filename, model_data_source.get_root_dir())
 
         volumes.append(_Volume(model_data_source.get_root_dir(), "/opt/ml/model"))
 
